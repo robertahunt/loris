@@ -25,6 +25,7 @@ import sys
 sys.path.append('.')
 
 from configobj import ConfigObj
+from werkzeug.utils import secure_filename
 from werkzeug.http import parse_date, http_date
 
 from werkzeug.wrappers import (
@@ -42,7 +43,7 @@ from loris.loris_exception import (
     TransformException,
 )
 
-
+ALLOWED_UPLOAD_EXTENSIONS = ['jpg','png','gif']
 
 getcontext().prec = 25 # Decimal precision. This should be plenty.
 
@@ -65,8 +66,6 @@ def get_debug_config(debug_jp2_transformer):
     config['img_info.InfoCache']['cache_dp'] = '/tmp/loris/cache/info'
     config['resolver']['impl'] = 'loris.resolver.SimpleFSResolver'
     config['resolver']['src_img_root'] = path.join(project_dp,'tests','img')
-    config['transforms']['target_formats'] = [ 'jpg', 'png', 'gif', 'webp', 'tif']
-    
     if debug_jp2_transformer == 'opj':
         from loris.transforms import OPJ_JP2Transformer
         config['transforms']['jp2']['impl'] = 'OPJ_JP2Transformer'
@@ -220,6 +219,13 @@ class LorisResponse(BaseResponse, CommonResponseDescriptorsMixin):
         self.headers['Access-Control-Allow-Methods'] = "GET, OPTIONS"
         self.headers['Access-Control-Allow-Headers'] = "Authorization"
 
+class UploadedImageResponse(LorisResponse):
+    def __init__(self, message=None):
+	if message is None:
+	  message = "image upload successful? - Roberta should fix this"
+	message = 'Message: %s' % (message)
+        status = 200
+        super(UploadedImageResponse, self).__init__(message, status, 'text/plain')
 
 class BadRequestResponse(LorisResponse):
     def __init__(self, message=None):
@@ -293,7 +299,14 @@ class LorisRequest(object):
             self.ident = quote_plus(ident)
             self.params = 'info.json'
             self.request_type = 'info'
-
+            
+        #check for image post
+        elif self._path.endswith('upload_image.json'):
+	    ident = '/'.join(self._path[1:].split('/')[:-1])
+            self.ident = quote_plus(ident)
+            self.params = {'whatareparams?':'who_knows'}
+	    self.request_type = 'upload_image'
+	 
         #if the request didn't match the stricter regex above, but it does match this one, we know we have an
         # invalid image request, so we can return a 400 BadRequest to the user.
         elif constants.LOOSER_IMAGE_RE.match(self._path):
@@ -405,12 +418,32 @@ class Loris(object):
         if request_type == 'bad_image_request':
             return BadRequestResponse()
 
+	if request_type == 'upload_image':
+	    def allowed_file_upload(filename):
+		return '.' in filename and filename.rsplit('.',1)[1].lower() in ALLOWED_UPLOAD_EXTENSIONS
+	      
+	    if request.method == 'POST':
+		if 'media' not in request.files:
+		    return BadRequestResponse('No "media" found in post file dictionary')
+		img = request.files['media']
+		
+		if img.filename == '':
+		    return BadRequestResponse('No "filename" for given media upload')
+		  
+		if img and allowed_file_upload(img.filename):
+		    filename = secure_filename(img.filename)
+		    img.save(os.path.join('/usr/local/share/images', filename))
+		    return UploadedImageResponse(str(request) + ' + ' + str(type(request)) + ' + ' + str(request.files))
+		  
+		return BadRequestResponse('Error code 40923djhf')
+
+
         ident = loris_request.ident
         base_uri = loris_request.base_uri
 
         if request_type == 'redirect_info':
             if not self.resolver.is_resolvable(ident):
-                msg = "could not resolve identifier: %s " % (ident)
+                msg = "could not resolve identifier blah blah: %s %s" % (ident, self._path)
                 return NotFoundResponse(msg)
 
             r = LorisResponse()

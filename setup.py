@@ -166,11 +166,11 @@ Please create this user, e.g.:
     def __write_wsgi(self):
         config_file_path = os.path.join(self.config_dir, CONFIG_FILE_NAME)
         wsgi_file_path = os.path.join(self.www_dir, WSGI_FILE_NAME)
-        content = '''#!/usr/bin/env python
+        content = '''#!/usr/bin/env /usr/local/bin/python2.7
 from loris.webapp import create_app
 # Uncomment and configure below if you are using virtualenv
 # import site
-# site.addsitedir('/path/to/my/virtualenv/lib/python2.x/site-packages')
+# site.addsitedir('/home/robertahunt/anaconda3/envs/image_server/lib/python2.7/site-packages')
 application = create_app(config_file_path='%s')
 ''' % (config_file_path,)
 
