@@ -43,7 +43,7 @@ from loris.loris_exception import (
     TransformException,
 )
 
-ALLOWED_UPLOAD_EXTENSIONS = ['jpg','png','gif']
+ALLOWED_UPLOAD_EXTENSIONS = ['jpg','png','gif','tif'] 
 
 getcontext().prec = 25 # Decimal precision. This should be plenty.
 
@@ -220,10 +220,8 @@ class LorisResponse(BaseResponse, CommonResponseDescriptorsMixin):
         self.headers['Access-Control-Allow-Headers'] = "Authorization"
 
 class UploadedImageResponse(LorisResponse):
-    def __init__(self, message=None):
-	if message is None:
-	  message = "image upload successful? - Roberta should fix this"
-	message = 'Message: %s' % (message)
+    def __init__(self, filename):       
+        message = 'Image upload successful for file: %s' % (filename)
         status = 200
         super(UploadedImageResponse, self).__init__(message, status, 'text/plain')
 
@@ -301,12 +299,12 @@ class LorisRequest(object):
             self.request_type = 'info'
             
         #check for image post
-        elif self._path.endswith('upload_image.json'):
-	    ident = '/'.join(self._path[1:].split('/')[:-1])
+        elif self._path.endswith('upload_image'):
+            ident = '/'.join(self._path[1:].split('/')[:-1])
             self.ident = quote_plus(ident)
             self.params = {'whatareparams?':'who_knows'}
-	    self.request_type = 'upload_image'
-	 
+            self.request_type = 'upload_image'
+     
         #if the request didn't match the stricter regex above, but it does match this one, we know we have an
         # invalid image request, so we can return a 400 BadRequest to the user.
         elif constants.LOOSER_IMAGE_RE.match(self._path):
@@ -418,24 +416,25 @@ class Loris(object):
         if request_type == 'bad_image_request':
             return BadRequestResponse()
 
-	if request_type == 'upload_image':
-	    def allowed_file_upload(filename):
-		return '.' in filename and filename.rsplit('.',1)[1].lower() in ALLOWED_UPLOAD_EXTENSIONS
-	      
-	    if request.method == 'POST':
-		if 'media' not in request.files:
-		    return BadRequestResponse('No "media" found in post file dictionary')
-		img = request.files['media']
-		
-		if img.filename == '':
-		    return BadRequestResponse('No "filename" for given media upload')
-		  
-		if img and allowed_file_upload(img.filename):
-		    filename = secure_filename(img.filename)
-		    img.save(os.path.join('/usr/local/share/images', filename))
-		    return UploadedImageResponse(str(request) + ' + ' + str(type(request)) + ' + ' + str(request.files))
-		  
-		return BadRequestResponse('Error code 40923djhf')
+        if request_type == 'upload_image':
+            def allowed_file_upload(filename):
+                return '.' in filename and filename.rsplit('.',1)[1].lower() in ALLOWED_UPLOAD_EXTENSIONS
+              
+            if request.method == 'POST':
+                if 'media' not in request.files:
+                    return BadRequestResponse('No "media" found in post file dictionary')
+
+                img = request.files['media']
+                filename = secure_filename(img.filename)
+
+                if not allowed_file_upload(filename):
+                    return BadRequestResponse('Image file extension not allowed. Allowed extensions are: %s'%(ALLOWED_UPLOAD_EXTENSIONS))
+
+                if img.filename == '':
+                    return BadRequestResponse('No "filename" for given media upload')
+                 
+                img.save(os.path.join('/usr/local/share/images', filename))
+                return UploadedImageResponse(filename)
 
 
         ident = loris_request.ident
@@ -443,7 +442,7 @@ class Loris(object):
 
         if request_type == 'redirect_info':
             if not self.resolver.is_resolvable(ident):
-                msg = "could not resolve identifier blah blah: %s %s" % (ident, self._path)
+                msg = "could not resolve identifier: %s" % (ident)
                 return NotFoundResponse(msg)
 
             r = LorisResponse()
